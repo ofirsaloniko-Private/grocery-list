@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>רשימת קניות משותפת</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      touch-action: manipulation;
+    }
+  </style>
+</head>
+<body class="bg-slate-100 min-h-screen pb-20 text-slate-800">
+
+  <!-- Header -->
+  <header class="bg-emerald-600 text-white shadow-md sticky top-0 z-10 px-4 py-3">
+    <div class="max-w-md mx-auto flex items-center justify-between">
+      <h1 class="text-xl font-bold flex items-center gap-2">
+        🛒 רשימות קניות
+      </h1>
+      <span id="connectionStatus" class="text-xs bg-emerald-700 px-2.5 py-1 rounded-full text-emerald-100">
+        מתחבר...
+      </span>
+    </div>
+  </header>
+
+  <main class="max-w-md mx-auto p-4 space-y-4">
+    
+    <!-- סרגל ניהול רשימות -->
+    <section class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 space-y-3">
+      <div class="flex items-center justify-between">
+        <label for="listSelector" class="text-xs font-semibold text-slate-500 tracking-wider">בחר רשימה פעילה:</label>
+        <button 
+          id="deleteListBtn" 
+          class="text-xs text-rose-600 hover:text-rose-700 font-medium hover:underline flex items-center gap-1"
+          title="מחק את הרשימה הנוכחית לחלוטין"
+        >
+          🗑️ מחק רשימה זו
+        </button>
+      </div>
+
+      <div class="flex gap-2">
+        <select 
+          id="listSelector" 
+          class="flex-1 px-3 py-2 border border-slate-300 rounded-lg bg-slate-50 text-sm font-medium focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+        >
+          <option value="" disabled selected>טוען רשימות...</option>
+        </select>
+        <button 
+          id="newListBtn" 
+          class="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-300 px-3 py-2 rounded-lg text-sm font-semibold transition active:scale-95 flex items-center gap-1 whitespace-nowrap"
+        >
+          ➕ רשימה חדשה
+        </button>
+      </div>
+    </section>
+
+    <!-- הוספת פריט בודד והעלאת קובץ -->
+    <section id="itemInputSection" class="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+      <form id="addItemForm" class="flex gap-2">
+        <input 
+          type="text" 
+          id="itemInput" 
+          placeholder="מה לקנות? (למשל: חלב, עגבניות...)" 
+          class="flex-1 px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 text-base"
+          autocomplete="off"
+          required
+        />
+        <button 
+          type="submit" 
+          class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg font-medium shadow-sm transition active:scale-95"
+        >
+          הוסף
+        </button>
+      </form>
+
+      <div class="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
+        <label class="cursor-pointer hover:text-emerald-600 flex items-center gap-1 font-medium">
+          📄 טען מקובץ טקסט
+          <input type="file" id="fileInput" accept=".txt" class="hidden" />
+        </label>
+        <button id="clearCompletedBtn" class="hover:text-rose-600 transition hidden">
+          נקה פריטים שנקנו (✔️)
+        </button>
+      </div>
+    </section>
+
+    <!-- רשימת הפריטים -->
+    <section class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+      <div class="p-3 bg-slate-50/70 border-b border-slate-100 flex justify-between items-center text-xs text-slate-500 font-medium">
+        <span id="activeListTitle">טוען...</span>
+        <span id="itemsSummary">0 פריטים</span>
+      </div>
+      <ul id="shoppingList" class="divide-y divide-slate-100">
+        <li class="p-4 text-center text-slate-400 text-sm">אנא המתן...</li>
+      </ul>
+    </section>
+
+  </main>
+
+  <!-- סקריפט מודולרי -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+    import { 
+      getDatabase, 
+      ref, 
+      push, 
+      set,
+      onValue, 
+      update, 
+      remove,
+      get
+    } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+
+    // 🔴 ודא שכל המפתחות שלך מוזנים כאן 🔴
+	
+    const firebaseConfig = {
+      apiKey: "AIzaSyCE3vIHSezJ3fHgIszbhwlhifnVqnX_l_g",
+      authDomain: "grocery-list-965d9.firebaseapp.com",
+      databaseURL: "https://grocery-list-965d9-default-rtdb.europe-west1.firebasedatabase.app",
+      projectId: "grocery-list-965d9",
+      storageBucket: "grocery-list-965d9.appspot.com",
+      messagingSenderId: "704008571930",
+      appId: "1:704008571930:web:a2c8b222574fbcb78255a3"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+    const listsRootRef = ref(db, 'lists');
+
+    // אלמנטים
+    const listSelector = document.getElementById('listSelector');
+    const newListBtn = document.getElementById('newListBtn');
+    const deleteListBtn = document.getElementById('deleteListBtn');
+    const addItemForm = document.getElementById('addItemForm');
+    const itemInput = document.getElementById('itemInput');
+    const fileInput = document.getElementById('fileInput');
+    const shoppingList = document.getElementById('shoppingList');
+    const activeListTitle = document.getElementById('activeListTitle');
+    const itemsSummary = document.getElementById('itemsSummary');
+    const connectionStatus = document.getElementById('connectionStatus');
+    const clearCompletedBtn = document.getElementById('clearCompletedBtn');
+
+    let currentListId = localStorage.getItem('active_shopping_list_id') || null;
+    let unsubscribeItemsListener = null;
+
+    // יצירת שם ברירת מחדל עם תאריך ושעה בעברית
+    function getDefaultListName() {
+      const now = new Date();
+      return `רשימה ${now.toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit', year: '2-digit' })} ${now.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}`;
+    }
+
+    // 1. האזנה לכל הרשימות הקיימות (בזמן אמת)
+    onValue(listsRootRef, (snapshot) => {
+      connectionStatus.textContent = "מחובר בזמן אמת";
+      connectionStatus.className = "text-xs bg-emerald-800 px-2.5 py-1 rounded-full text-emerald-100";
+
+      const listsData = snapshot.val();
+      listSelector.innerHTML = '';
+
+      if (!listsData) {
+        // אין אף רשימה במאגר - ניצור אחת אוטומטית ראשונה
+        createNewList();
+        return;
+      }
+
+      const lists = Object.entries(listsData).map(([id, val]) => ({
+        id,
+        name: val.name || 'רשימה ללא שם',
+        createdAt: val.createdAt || 0
+      }));
+
+      // מיון: הרשימה החדשה ביותר למעלה
+      lists.sort((a, b) => b.createdAt - a.createdAt);
+
+      lists.forEach(l => {
+        const option = document.createElement('option');
+        option.value = l.id;
+        option.textContent = l.name;
+        listSelector.appendChild(option);
+      });
+
+      // בדיקה שהרשימה הנוכחית שנשמרה ב-Local עדיין קיימת
+      const exists = lists.some(l => l.id === currentListId);
+      if (!exists) {
+        currentListId = lists[0].id;
+        localStorage.setItem('active_shopping_list_id', currentListId);
+      }
+
+      listSelector.value = currentListId;
+      const activeList = lists.find(l => l.id === currentListId);
+      activeListTitle.textContent = activeList ? activeList.name : '';
+
+      listenToActiveList(currentListId);
+    }, (error) => {
+      console.error(error);
+      connectionStatus.textContent = "שגיאת חיבור";
+      connectionStatus.className = "text-xs bg-rose-700 px-2.5 py-1 rounded-full text-white";
+    });
+
+    // 2. החלפת רשימה ידנית מתוך התפריט
+    listSelector.addEventListener('change', (e) => {
+      currentListId = e.target.value;
+      localStorage.setItem('active_shopping_list_id', currentListId);
+      activeListTitle.textContent = listSelector.options[listSelector.selectedIndex].text;
+      listenToActiveList(currentListId);
+    });
+
+    // 3. כפתור יצירת רשימה חדשה
+    newListBtn.addEventListener('click', () => {
+      const defaultName = getDefaultListName();
+      const customName = prompt("הזן שם לרשימה החדשה:", defaultName);
+      if (customName !== null && customName.trim() !== '') {
+        createNewList(customName.trim());
+      }
+    });
+
+    function createNewList(name = getDefaultListName()) {
+      const newListRef = push(listsRootRef);
+      const newId = newListRef.key;
+
+      set(newListRef, {
+        name: name,
+        createdAt: Date.now(),
+        items: {}
+      }).then(() => {
+        currentListId = newId;
+        localStorage.setItem('active_shopping_list_id', currentListId);
+      });
+    }
+
+    // 4. מחיקת הרשימה הנוכחית
+    deleteListBtn.addEventListener('click', () => {
+      if (!currentListId) return;
+      
+      const currentName = listSelector.options[listSelector.selectedIndex]?.text || "הרשימה";
+      const confirmDelete = confirm(`האם אתה בטוח שברצונך למחוק לצמיתות את "${currentName}" יחד עם כל הפריטים שלה?`);
+      
+      if (confirmDelete) {
+        remove(ref(db, `lists/${currentListId}`));
+      }
+    });
+
+    // 5. האזנה לפריטים של הרשימה הפעילה
+    function listenToActiveList(listId) {
+      if (unsubscribeItemsListener) {
+        unsubscribeItemsListener(); // ניתוק האזנה מהרשימה הקודמת
+      }
+
+      const itemsRef = ref(db, `lists/${listId}/items`);
+
+      unsubscribeItemsListener = onValue(itemsRef, (snapshot) => {
+        const data = snapshot.val();
+        shoppingList.innerHTML = '';
+
+        if (!data) {
+          shoppingList.innerHTML = `
+            <li class="p-6 text-center text-slate-400 text-sm">
+              הרשימה ריקה 🎉<br>הוסיפו פריטים למעלה או טענו קובץ טקסט.
+            </li>`;
+          itemsSummary.textContent = "0 פריטים";
+          clearCompletedBtn.classList.add('hidden');
+          return;
+        }
+
+        const itemsArray = Object.entries(data).map(([id, val]) => ({ id, ...val }));
+        itemsArray.sort((a, b) => (a.completed === b.completed ? 0 : a.completed ? 1 : -1));
+
+        let pendingCount = 0;
+        let completedCount = 0;
+
+        itemsArray.forEach((item) => {
+          if (!item.completed) pendingCount++;
+          else completedCount++;
+
+          const li = document.createElement('li');
+          li.className = `flex items-center justify-between p-3.5 transition-colors ${
+            item.completed ? 'bg-slate-50/70 text-slate-400' : 'bg-white hover:bg-slate-50'
+          }`;
+
+          li.innerHTML = `
+            <div class="flex items-center gap-3 flex-1 cursor-pointer select-none">
+              <input 
+                type="checkbox" 
+                ${item.completed ? 'checked' : ''} 
+                class="w-5 h-5 accent-emerald-600 rounded cursor-pointer"
+              />
+              <span class="text-base ${item.completed ? 'line-through text-slate-400' : 'font-medium text-slate-700'}">
+                ${escapeHtml(item.name)}
+              </span>
+            </div>
+            <button class="delete-btn text-slate-300 hover:text-rose-500 p-1.5 rounded-lg transition" title="מחק פריט">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+            </button>
+          `;
+
+          const checkbox = li.querySelector('input[type="checkbox"]');
+          const textWrapper = li.querySelector('div');
+          
+          const toggleStatus = () => {
+            update(ref(db, `lists/${listId}/items/${item.id}`), {
+              completed: !item.completed
+            });
+          };
+
+          checkbox.addEventListener('change', toggleStatus);
+          textWrapper.addEventListener('click', (e) => {
+            if (e.target !== checkbox) toggleStatus();
+          });
+
+          const deleteBtn = li.querySelector('.delete-btn');
+          deleteBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            remove(ref(db, `lists/${listId}/items/${item.id}`));
+          });
+
+          shoppingList.appendChild(li);
+        });
+
+        itemsSummary.textContent = `${pendingCount} מתוך ${itemsArray.length} נותרו`;
+
+        if (completedCount > 0) {
+          clearCompletedBtn.classList.remove('hidden');
+        } else {
+          clearCompletedBtn.classList.add('hidden');
+        }
+      });
+    }
+
+    // ניקוי כל הפריטים שסומנו ב-V
+    clearCompletedBtn.addEventListener('click', async () => {
+      if (!currentListId) return;
+      const snapshot = await get(ref(db, `lists/${currentListId}/items`));
+      const data = snapshot.val();
+      if (!data) return;
+
+      const updates = {};
+      Object.entries(data).forEach(([id, item]) => {
+        if (item.completed) {
+          updates[`lists/${currentListId}/items/${id}`] = null; // מחיקה
+        }
+      });
+      update(ref(db), updates);
+    });
+
+    // הוספת פריט בודד
+    addItemForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const val = itemInput.value.trim();
+      if (!val || !currentListId) return;
+
+      push(ref(db, `lists/${currentListId}/items`), {
+        name: val,
+        completed: false,
+        createdAt: Date.now()
+      });
+
+      itemInput.value = '';
+      itemInput.focus();
+    });
+
+    // טעינת רשימה מקובץ טקסט
+    fileInput.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file || !currentListId) return;
+
+      const reader = new FileReader();
+      reader.onload = (evt) => {
+        const lines = evt.target.result.split(/\r?\n/);
+        lines.forEach(line => {
+          const trimmed = line.trim();
+          if (trimmed) {
+            push(ref(db, `lists/${currentListId}/items`), {
+              name: trimmed,
+              completed: false,
+              createdAt: Date.now()
+            });
+          }
+        });
+        fileInput.value = '';
+      };
+      reader.readAsText(file);
+    });
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+  </script>
+</body>
+</html>
