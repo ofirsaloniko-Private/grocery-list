@@ -57,7 +57,7 @@
       </div>
     </section>
 
-    <!-- הוספת פריט בודד והעלאת קובץ -->
+    <!-- הוספת פריט עם כמות -->
     <section id="itemInputSection" class="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
       <form id="addItemForm" class="flex gap-2">
         <input 
@@ -67,6 +67,16 @@
           class="flex-1 px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 text-base"
           autocomplete="off"
           required
+        />
+        <!-- שדה כמות עם ברירת מחדל 1 -->
+        <input 
+          type="number" 
+          id="quantityInput" 
+          min="1" 
+          max="999"
+          value="1" 
+          title="כמות"
+          class="w-16 px-2 py-2 border border-slate-300 rounded-lg text-center font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500 text-base"
         />
         <button 
           type="submit" 
@@ -81,7 +91,7 @@
           📄 טען מקובץ טקסט
           <input type="file" id="fileInput" accept=".txt" class="hidden" />
         </label>
-        <button id="clearCompletedBtn" class="hover:text-rose-600 transition hidden">
+        <button id="clearCompletedBtn" class="hover:text-rose-600 transition hidden font-medium">
           נקה פריטים שנקנו (✔️)
         </button>
       </div>
@@ -136,6 +146,7 @@
     const deleteListBtn = document.getElementById('deleteListBtn');
     const addItemForm = document.getElementById('addItemForm');
     const itemInput = document.getElementById('itemInput');
+    const quantityInput = document.getElementById('quantityInput');
     const fileInput = document.getElementById('fileInput');
     const shoppingList = document.getElementById('shoppingList');
     const activeListTitle = document.getElementById('activeListTitle');
@@ -146,13 +157,12 @@
     let currentListId = localStorage.getItem('active_shopping_list_id') || null;
     let unsubscribeItemsListener = null;
 
-    // יצירת שם ברירת מחדל עם תאריך ושעה בעברית
     function getDefaultListName() {
       const now = new Date();
       return `רשימה ${now.toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit', year: '2-digit' })} ${now.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}`;
     }
 
-    // 1. האזנה לכל הרשימות הקיימות (בזמן אמת)
+    // 1. האזנה לכל הרשימות הקיימות
     onValue(listsRootRef, (snapshot) => {
       connectionStatus.textContent = "מחובר בזמן אמת";
       connectionStatus.className = "text-xs bg-emerald-800 px-2.5 py-1 rounded-full text-emerald-100";
@@ -161,7 +171,6 @@
       listSelector.innerHTML = '';
 
       if (!listsData) {
-        // אין אף רשימה במאגר - ניצור אחת אוטומטית ראשונה
         createNewList();
         return;
       }
@@ -172,7 +181,6 @@
         createdAt: val.createdAt || 0
       }));
 
-      // מיון: הרשימה החדשה ביותר למעלה
       lists.sort((a, b) => b.createdAt - a.createdAt);
 
       lists.forEach(l => {
@@ -182,7 +190,6 @@
         listSelector.appendChild(option);
       });
 
-      // בדיקה שהרשימה הנוכחית שנשמרה ב-Local עדיין קיימת
       const exists = lists.some(l => l.id === currentListId);
       if (!exists) {
         currentListId = lists[0].id;
@@ -200,7 +207,7 @@
       connectionStatus.className = "text-xs bg-rose-700 px-2.5 py-1 rounded-full text-white";
     });
 
-    // 2. החלפת רשימה ידנית מתוך התפריט
+    // 2. החלפת רשימה
     listSelector.addEventListener('change', (e) => {
       currentListId = e.target.value;
       localStorage.setItem('active_shopping_list_id', currentListId);
@@ -208,7 +215,7 @@
       listenToActiveList(currentListId);
     });
 
-    // 3. כפתור יצירת רשימה חדשה
+    // 3. יצירת רשימה חדשה
     newListBtn.addEventListener('click', () => {
       const defaultName = getDefaultListName();
       const customName = prompt("הזן שם לרשימה החדשה:", defaultName);
@@ -231,14 +238,11 @@
       });
     }
 
-    // 4. מחיקת הרשימה הנוכחית
+    // 4. מחיקת רשימה
     deleteListBtn.addEventListener('click', () => {
       if (!currentListId) return;
-      
       const currentName = listSelector.options[listSelector.selectedIndex]?.text || "הרשימה";
-      const confirmDelete = confirm(`האם אתה בטוח שברצונך למחוק לצמיתות את "${currentName}" יחד עם כל הפריטים שלה?`);
-      
-      if (confirmDelete) {
+      if (confirm(`האם אתה בטוח שברצונך למחוק לצמיתות את "${currentName}" יחד עם כל הפריטים שלה?`)) {
         remove(ref(db, `lists/${currentListId}`));
       }
     });
@@ -246,7 +250,7 @@
     // 5. האזנה לפריטים של הרשימה הפעילה
     function listenToActiveList(listId) {
       if (unsubscribeItemsListener) {
-        unsubscribeItemsListener(); // ניתוק האזנה מהרשימה הקודמת
+        unsubscribeItemsListener();
       }
 
       const itemsRef = ref(db, `lists/${listId}/items`);
@@ -265,7 +269,12 @@
           return;
         }
 
-        const itemsArray = Object.entries(data).map(([id, val]) => ({ id, ...val }));
+        const itemsArray = Object.entries(data).map(([id, val]) => ({ 
+          id, 
+          quantity: val.quantity !== undefined ? val.quantity : 1, // תמיכה גם בפריטים ישנים
+          ...val 
+        }));
+        
         itemsArray.sort((a, b) => (a.completed === b.completed ? 0 : a.completed ? 1 : -1));
 
         let pendingCount = 0;
@@ -281,25 +290,38 @@
           }`;
 
           li.innerHTML = `
-            <div class="flex items-center gap-3 flex-1 cursor-pointer select-none">
+            <div class="flex items-center gap-3 flex-1 min-w-0 cursor-pointer select-none">
               <input 
                 type="checkbox" 
                 ${item.completed ? 'checked' : ''} 
-                class="w-5 h-5 accent-emerald-600 rounded cursor-pointer"
+                class="w-5 h-5 accent-emerald-600 rounded cursor-pointer shrink-0"
               />
-              <span class="text-base ${item.completed ? 'line-through text-slate-400' : 'font-medium text-slate-700'}">
+              <span class="truncate text-base ${item.completed ? 'line-through text-slate-400' : 'font-medium text-slate-700'}">
                 ${escapeHtml(item.name)}
               </span>
             </div>
-            <button class="delete-btn text-slate-300 hover:text-rose-500 p-1.5 rounded-lg transition" title="מחק פריט">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-              </svg>
-            </button>
+
+            <!-- אזור כמות וכפתורי פעולה -->
+            <div class="flex items-center gap-1.5 shrink-0 mr-2">
+              <div class="flex items-center bg-slate-100 rounded-lg p-0.5 border border-slate-200">
+                <button class="qty-btn-minus text-slate-500 hover:text-emerald-700 w-6 h-6 flex items-center justify-center font-bold text-sm rounded transition active:bg-slate-200" title="הפחת כמות">-</button>
+                <span class="qty-display text-xs font-semibold px-2 py-0.5 min-w-[28px] text-center cursor-pointer hover:bg-slate-200 rounded" title="לחץ לעריכת כמות">
+                  ${item.quantity}
+                </span>
+                <button class="qty-btn-plus text-slate-500 hover:text-emerald-700 w-6 h-6 flex items-center justify-center font-bold text-sm rounded transition active:bg-slate-200" title="הגדל כמות">+</button>
+              </div>
+
+              <button class="delete-btn text-slate-300 hover:text-rose-500 p-1.5 rounded-lg transition" title="מחק פריט">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+              </button>
+            </div>
           `;
 
+          // שינוי מצב סימון (Checked)
           const checkbox = li.querySelector('input[type="checkbox"]');
-          const textWrapper = li.querySelector('div');
+          const textWrapper = li.querySelector('div.flex-1');
           
           const toggleStatus = () => {
             update(ref(db, `lists/${listId}/items/${item.id}`), {
@@ -312,6 +334,38 @@
             if (e.target !== checkbox) toggleStatus();
           });
 
+          // ניהול כמות: כפתור פלוס
+          const btnPlus = li.querySelector('.qty-btn-plus');
+          btnPlus.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const currentQty = parseInt(item.quantity, 10) || 1;
+            update(ref(db, `lists/${listId}/items/${item.id}`), { quantity: currentQty + 1 });
+          });
+
+          // ניהול כמות: כפתור מינוס
+          const btnMinus = li.querySelector('.qty-btn-minus');
+          btnMinus.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const currentQty = parseInt(item.quantity, 10) || 1;
+            if (currentQty > 1) {
+              update(ref(db, `lists/${listId}/items/${item.id}`), { quantity: currentQty - 1 });
+            }
+          });
+
+          // ניהול כמות: לחיצה ישירה על המספר לעריכה חופשית
+          const qtyDisplay = li.querySelector('.qty-display');
+          qtyDisplay.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const newQtyStr = prompt(`עדכן כמות עבור "${item.name}":`, item.quantity);
+            if (newQtyStr !== null) {
+              const parsed = parseInt(newQtyStr.trim(), 10);
+              if (!isNaN(parsed) && parsed > 0) {
+                update(ref(db, `lists/${listId}/items/${item.id}`), { quantity: parsed });
+              }
+            }
+          });
+
+          // מחיקת פריט
           const deleteBtn = li.querySelector('.delete-btn');
           deleteBtn.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -331,7 +385,7 @@
       });
     }
 
-    // ניקוי כל הפריטים שסומנו ב-V
+    // ניקוי פריטים שנקנו
     clearCompletedBtn.addEventListener('click', async () => {
       if (!currentListId) return;
       const snapshot = await get(ref(db, `lists/${currentListId}/items`));
@@ -341,7 +395,7 @@
       const updates = {};
       Object.entries(data).forEach(([id, item]) => {
         if (item.completed) {
-          updates[`lists/${currentListId}/items/${id}`] = null; // מחיקה
+          updates[`lists/${currentListId}/items/${id}`] = null;
         }
       });
       update(ref(db), updates);
@@ -351,19 +405,22 @@
     addItemForm.addEventListener('submit', (e) => {
       e.preventDefault();
       const val = itemInput.value.trim();
+      const qty = parseInt(quantityInput.value, 10) || 1;
       if (!val || !currentListId) return;
 
       push(ref(db, `lists/${currentListId}/items`), {
         name: val,
+        quantity: qty > 0 ? qty : 1,
         completed: false,
         createdAt: Date.now()
       });
 
       itemInput.value = '';
+      quantityInput.value = '1';
       itemInput.focus();
     });
 
-    // טעינת רשימה מקובץ טקסט
+    // טעינת רשימה מקובץ טקסט עם זיהוי כמויות אוטומטי (למשל: "3 חלב" או "2x תפוחים")
     fileInput.addEventListener('change', (e) => {
       const file = e.target.files[0];
       if (!file || !currentListId) return;
@@ -373,13 +430,24 @@
         const lines = evt.target.result.split(/\r?\n/);
         lines.forEach(line => {
           const trimmed = line.trim();
-          if (trimmed) {
-            push(ref(db, `lists/${currentListId}/items`), {
-              name: trimmed,
-              completed: false,
-              createdAt: Date.now()
-            });
+          if (!trimmed) return;
+
+          let itemName = trimmed;
+          let itemQty = 1;
+
+          // regex חכם שמזהה מספרים בראש השורה (למשל: "2 חלב", "3x קוטג'", "5-ביצים")
+          const match = trimmed.match(/^(\d+)\s*(?:x|-)?\s+(.+)$/i);
+          if (match) {
+            itemQty = parseInt(match[1], 10) || 1;
+            itemName = match[2].trim();
           }
+
+          push(ref(db, `lists/${currentListId}/items`), {
+            name: itemName,
+            quantity: itemQty,
+            completed: false,
+            createdAt: Date.now()
+          });
         });
         fileInput.value = '';
       };
